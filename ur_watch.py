@@ -4,8 +4,19 @@ UR ヌーヴェル赤羽台 (20_6940) の空室を監視して、
 新しく出た部屋だけ LINE (Messaging API) に push する。
 
 標準ライブラリのみ。GitHub Actions から1時間ごとに実行する想定。
+
+API 仕様（www.ur-net.go.jp の common/js/api_bukken_detail.js を実測して確定）:
+  POST https://chintai.r6.ur-net.go.jp/chintai/api/bukken/detail/detail_bukken_room/
+  - 物件コード "20_6940" は shisya=20 / danchi=694 / shikibetu=0 に分解する。
+  - パラメータ名は shikibetsu ではなく **shikibetu**（s が入らない）。
+    綴りを誤ると空室があっても常に null が返るので注意。
+  - 空室 0 件のときは JSON の null が返る。サイト側も data === null を
+    「ご案内できるお部屋がございません」の分岐に使っている。
+  - 1 リクエストで返るのは rowMax(=5) 件まで。全件取るには allCount を見て
+    pageIndex を進める。
 """
 
+import html
 import json
 import os
 import sys
@@ -19,20 +30,9 @@ DANCHI_URL = os.environ.get(
     "UR_URL", "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940.html"
 )
 SHISYA = os.environ.get("UR_SHISYA", "20")
-
-# 20_6940 の分解の仕方が確定していないので候補を順に試す。
-# UR_DANCHI / UR_SHIKIBETSU を指定した場合はそれだけを使う。
-if os.environ.get("UR_DANCHI"):
-    DANCHI_CANDIDATES = [
-        (os.environ["UR_DANCHI"], os.environ.get("UR_SHIKIBETSU", "0"))
-    ]
-else:
-    DANCHI_CANDIDATES = [
-        ("694", "0"),
-        ("6940", ""),
-        ("6940", "0"),
-        ("0694", "0"),
-    ]
+DANCHI = os.environ.get("UR_DANCHI", "694")
+# 旧名 UR_SHIKIBETSU も一応受ける
+SHIKIBETU = os.environ.get("UR_SHIKIBETU", os.environ.get("UR_SHIKIBETSU", "0"))
 
 MAX_RENT = os.environ.get("UR_MAX_RENT", "")
 MADORI_FILTER = os.environ.get("UR_MADORI", "")
@@ -42,43 +42,32 @@ ENDPOINT = (
     "https://chintai.r6.ur-net.go.jp"
     "/chintai/api/bukken/detail/detail_bukken_room/"
 )
+SITE = "https://www.ur-net.go.jp"
 
 UA = (
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
+MAX_PAGES = 20  # 暴走よけ
 
-def param_variants(danchi, shikibetsu):
-    """試すパラメータの組み合わせ。上から順に試す。"""
-    base = {
-        "shisya": SHISYA,
-        "danchi": danchi,
-        "shikibetsu": shikibetsu,
-        "orderByField": "0",
-        "orderBySort": "0",
-        "pageIndex": "0",
-        "sp": "",
-    }
-    yield "A:mode=init", {**base, "mode": "init"}
-    yield "B:base", dict(base)
-    yield "C:full", {
-        **base,
-        "mode": "init",
-        "rent_low": "",
-        "rent_high": "",
-        "floorspace_low": "",
-        "floorspace_high": "",
-        "newBukkenRoom": "",
-    }
-    yield "D:legacy", {
-        **base,
-        "rent_low": "",
-        "rent_high": "",
-        "floorspace_low": "",
-        "floorspace_high": "",
-        "newBukkenRoom": "",
-    }
+
+def build_params(page_index):
+    """ブラウザが実際に送っている form データと同じ名前・並びで作る。"""
+    return [
+        ("rent_low", ""),
+        ("rent_high", ""),
+        ("floorspace_low", ""),
+        ("floorspace_high", ""),
+        ("shisya", SHISYA),
+        ("danchi", DANCHI),
+        ("shikibetu", SHIKIBETU),
+        ("newBukkenRoom", ""),
+        ("orderByField", "0"),
+        ("orderBySort", "0"),
+        ("pageIndex", str(page_index)),
+        ("sp", ""),
+    ]
 
 
 def post(params):
@@ -91,89 +80,88 @@ def post(params):
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "X-Requested-With": "XMLHttpRequest",
             "Referer": DANCHI_URL,
-            "Origin": "https://www.ur-net.go.jp",
+            "Origin": SITE,
         },
     )
     with urllib.request.urlopen(req, timeout=30) as res:
         return res.read().decode("utf-8", errors="replace")
 
 
-def extract_list(data):
-    if isinstance(data, list):
-        return data
-    if isinstance(data, dict):
-        for key in ("roomList", "list", "data", "items", "room"):
-            if isinstance(data.get(key), list):
-                return data[key]
-    return None
+def fetch_page(page_index):
+    """1ページ分を取る。空室なしなら [] を返す。取得自体に失敗したら例外。"""
+    body = post(build_params(page_index))
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(
+            f"UR API が JSON を返しませんでした (pageIndex={page_index}): "
+            f"{body[:200]!r}"
+        ) from e
+
+    # null = 空室 0 件。エラーではない。
+    if data is None:
+        return []
+    if not isinstance(data, list):
+        raise RuntimeError(
+            f"UR API の応答が想定外です (pageIndex={page_index}): {body[:200]!r}"
+        )
+    return data
 
 
 def fetch_rooms():
-    """当たりのパラメータが見つかるまで総当たりし、結果をログに出す。"""
-    log = []
-    for danchi, shikibetsu in DANCHI_CANDIDATES:
-        for label, params in param_variants(danchi, shikibetsu):
-            tag = f"danchi={danchi} shikibetsu={shikibetsu!r} {label}"
-            try:
-                body = post(params)
-            except Exception as e:  # noqa: BLE001
-                log.append(f"{tag} -> {type(e).__name__}: {e}")
-                continue
+    """allCount を見ながら全ページ取得する。"""
+    bukken = f"{SHISYA}_{DANCHI}{SHIKIBETU}"
+    rooms = fetch_page(0)
+    if not rooms:
+        print(f"UR API: {bukken} -> 空室 0件 (null)")
+        return []
 
-            try:
-                data = json.loads(body)
-            except json.JSONDecodeError:
-                log.append(f"{tag} -> not JSON: {body[:150]!r}")
-                continue
+    try:
+        all_count = int(rooms[0].get("allCount", len(rooms)))
+        row_max = int(rooms[0].get("rowMax", len(rooms))) or len(rooms)
+    except (TypeError, ValueError):
+        all_count, row_max = len(rooms), len(rooms)
 
-            rooms = extract_list(data)
-            if rooms is not None:
-                print(f"✅ HIT: {tag} -> {len(rooms)}件")
-                if rooms:
-                    print("先頭の部屋のキー:", sorted(rooms[0].keys()))
-                    print("先頭の部屋:", json.dumps(rooms[0], ensure_ascii=False)[:600])
-                print(f"次回から UR_DANCHI={danchi} UR_SHIKIBETSU={shikibetsu} "
-                      f"を env に固定すると速くなります")
-                return rooms
+    pages = min(-(-all_count // row_max), MAX_PAGES)
+    for page in range(1, pages):
+        more = fetch_page(page)
+        if not more:
+            break
+        rooms.extend(more)
 
-            log.append(f"{tag} -> {body[:150]!r}")
-
-    raise RuntimeError("UR API から空室一覧を取得できませんでした:\n" + "\n".join(log))
+    print(f"UR API: {bukken} -> allCount={all_count} 取得={len(rooms)}件")
+    if len(rooms) < all_count:
+        print(f"⚠️ {all_count}件のうち{len(rooms)}件しか取得できていません")
+    return rooms
 
 
 # ---- 部屋情報の整形 -----------------------------------------------------
-def pick(room, *keys, default=""):
-    for k in keys:
-        v = room.get(k)
-        if v not in (None, "", []):
-            return str(v)
-    return default
+def text(value):
+    """'47&#13217;' のような HTML エンティティを戻す。None は空文字に。"""
+    if value in (None, ""):
+        return ""
+    return html.unescape(str(value)).strip()
 
 
 def normalize(room):
-    room_id = pick(room, "id", "roomId", "bukkenNo", "roomNo")
-    link = pick(room, "roomDetailLink", "roomLink", "detailLink")
-    if link and link.startswith("/"):
-        link = "https://www.ur-net.go.jp" + link
+    link = text(room.get("roomDetailLink"))
+    if link.startswith("/"):
+        link = SITE + link
 
-    name = pick(room, "name", "roomName", "title")
-    rent = pick(room, "rent", "rentNormal", "chinryo")
-    common = pick(room, "commonfee", "commonFee", "kyoekihi")
-    madori = pick(room, "madori", "type", "floorPlan")
-    space = pick(room, "floorspace", "menseki", "floorSpace")
-    floor = pick(room, "floor", "kaisu")
-
-    if not room_id:
-        room_id = "|".join([name, madori, space, floor, rent])
-
+    # madori は間取り図の画像 URL なので使わない。間取りの文字列は type。
     return {
-        "id": room_id,
-        "name": name,
-        "rent": rent,
-        "common": common,
-        "madori": madori,
-        "space": space,
-        "floor": floor,
+        "id": text(room.get("id")),
+        "name": text(room.get("name")),
+        "rent": text(room.get("rent")),
+        "common": text(room.get("commonfee")),
+        "madori": text(room.get("type")),
+        "space": text(room.get("floorspace")),
+        "floor": text(room.get("floor")),
+        "system": [
+            text(s.get("制度名"))
+            for s in (room.get("system") or [])
+            if isinstance(s, dict) and s.get("制度名")
+        ],
         "link": link or DANCHI_URL,
     }
 
@@ -201,7 +189,11 @@ def format_room(r):
     rent = r["rent"]
     if r["common"]:
         rent = f"{rent}（共益費 {r['common']}）"
-    return f"■ {head}\n　{rent}\n　{r['link']}"
+    lines = [f"■ {head}", f"　{rent}"]
+    if r["system"]:
+        lines.append("　" + "・".join(r["system"]))
+    lines.append(f"　{r['link']}")
+    return "\n".join(lines)
 
 
 # ---- 状態の保存 ---------------------------------------------------------
@@ -219,19 +211,19 @@ def save_state(state):
 
 
 # ---- LINE 送信 ----------------------------------------------------------
-def line_push(text):
+def line_push(message):
     """送信に失敗しても例外を投げない（ログに出すだけ）。"""
     token = (os.environ.get("LINE_CHANNEL_ACCESS_TOKEN") or "").strip()
     to = (os.environ.get("LINE_TO") or "").strip()
 
     if not token or not to:
-        print("LINE の認証情報が未設定のため送信をスキップ:\n" + text)
+        print("LINE の認証情報が未設定のため送信をスキップ:\n" + message)
         return False
 
     print(f"LINE: token {len(token)}文字 / 宛先 {to[:5]}… に送信します")
 
     body = json.dumps(
-        {"to": to, "messages": [{"type": "text", "text": text[:4900]}]}
+        {"to": to, "messages": [{"type": "text", "text": message[:4900]}]}
     ).encode("utf-8")
     req = urllib.request.Request(
         "https://api.line.me/v2/bot/message/push",
