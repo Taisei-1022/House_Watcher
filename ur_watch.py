@@ -25,18 +25,27 @@ import urllib.parse
 import urllib.request
 
 # ---- 監視対象 ----------------------------------------------------------
-DANCHI_NAME = os.environ.get("UR_NAME", "ヌーヴェル赤羽台")
-DANCHI_URL = os.environ.get(
+def env(name, default=""):
+    """未設定でも空文字でも既定値に戻す。
+
+    GitHub Actions は workflow_dispatch の未入力を空文字で渡してくるので、
+    os.environ.get(name, default) では既定値にフォールバックしない。
+    """
+    return (os.environ.get(name) or "").strip() or default
+
+
+DANCHI_NAME = env("UR_NAME", "ヌーヴェル赤羽台")
+DANCHI_URL = env(
     "UR_URL", "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940.html"
 )
-SHISYA = os.environ.get("UR_SHISYA", "20")
-DANCHI = os.environ.get("UR_DANCHI", "694")
+SHISYA = env("UR_SHISYA", "20")
+DANCHI = env("UR_DANCHI", "694")
 # 旧名 UR_SHIKIBETSU も一応受ける
-SHIKIBETU = os.environ.get("UR_SHIKIBETU", os.environ.get("UR_SHIKIBETSU", "0"))
+SHIKIBETU = env("UR_SHIKIBETU", env("UR_SHIKIBETSU", "0"))
 
-MAX_RENT = os.environ.get("UR_MAX_RENT", "")
-MADORI_FILTER = os.environ.get("UR_MADORI", "")
-STATE_PATH = os.environ.get("UR_STATE", "state.json")
+MAX_RENT = env("UR_MAX_RENT")
+MADORI_FILTER = env("UR_MADORI")
+STATE_PATH = env("UR_STATE", "state.json")
 
 ENDPOINT = (
     "https://chintai.r6.ur-net.go.jp"

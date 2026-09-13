@@ -5,6 +5,23 @@ on:
     # 毎時10分（UTC基準だが毎時なので日本時間でも毎時10分）
     - cron: "10 * * * *"
   workflow_dispatch:
+    inputs:
+      danchi:
+        description: "団地コード。空ならヌーヴェル赤羽台(694)を通常監視。値を入れるとスモークテスト扱い（例: 253 = 仙台桜ヶ岡・空室あり）"
+        required: false
+        default: ""
+      shikibetu:
+        description: "識別（通常は 0）"
+        required: false
+        default: "0"
+      name:
+        description: "通知に出す団地名（例: 仙台桜ヶ岡）"
+        required: false
+        default: ""
+      url:
+        description: "団地ページのURL"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -27,13 +44,22 @@ jobs:
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_TO: ${{ secrets.LINE_TO }}
+          # workflow_dispatch で団地コードを渡すとスモークテストになる。
+          # schedule 実行時は空文字が入り、スクリプト側の既定値に戻る。
+          UR_DANCHI: ${{ github.event.inputs.danchi }}
+          UR_SHIKIBETU: ${{ github.event.inputs.shikibetu }}
+          UR_NAME: ${{ github.event.inputs.name }}
+          UR_URL: ${{ github.event.inputs.url }}
+          # スモークテストは本番の state.json を汚さない
+          UR_STATE: ${{ github.event.inputs.danchi && 'smoke-state.json' || 'state.json' }}
           # 絞り込みたい場合だけコメントを外す
           # UR_MAX_RENT: "150000"
           # UR_MADORI: "2DK,2LDK,3LDK"
         run: python ur_watch.py
 
       - name: Save state
-        if: always()
+        # スモークテストのときは state を commit しない
+        if: always() && !github.event.inputs.danchi
         run: |
           git config user.name  "ur-watch-bot"
           git config user.email "actions@github.com"
