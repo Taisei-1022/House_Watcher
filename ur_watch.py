@@ -49,6 +49,12 @@ MAX_RENT = env("UR_MAX_RENT")
 MADORI_FILTER = env("UR_MADORI")
 STATE_PATH = env("UR_STATE", "state.json")
 
+# デイリーレポートを送る時刻（JST の時）。この時刻を過ぎた最初の実行で送る。
+try:
+    DIGEST_HOUR = int(env("UR_DIGEST_HOUR", "19"))
+except ValueError:
+    DIGEST_HOUR = 19
+
 ENDPOINT = (
     "https://chintai.r6.ur-net.go.jp"
     "/chintai/api/bukken/detail/detail_bukken_room/"
@@ -236,6 +242,13 @@ def format_room(r):
 
 
 # ---- 状態の保存 ---------------------------------------------------------
+JST = datetime.timezone(datetime.timedelta(hours=9))
+
+
+def jst_now():
+    return datetime.datetime.now(JST)
+
+
 def jst_today():
     """JST の日付 (YYYY-MM-DD)。
 
@@ -243,8 +256,54 @@ def jst_today():
     ファイルの中身が変わる = Actions が 1日1回だけ commit する。
     「いつまで動いていたか」の記録になり、リポジトリが無活動になるのも防ぐ。
     """
-    jst = datetime.timezone(datetime.timedelta(hours=9))
-    return datetime.datetime.now(jst).strftime("%Y-%m-%d")
+    return jst_now().strftime("%Y-%m-%d")
+
+
+def digest_due(state, now):
+    """デイリーレポートを送るべきか。
+
+    cron を1本増やすのではなく、10分ごとの実行が毎回これを判定する。
+    GitHub のスケジューラは遅延・スキップがあるため、19:00 ちょうどの
+    cron に賭けると「その1回が飛んだら届かない」ことになる。
+    この方式なら何回飛んでも次の実行が拾うので、必ず届く。
+    送信に失敗した場合も last_digest を更新しないので、次の実行で再送する。
+    """
+    if now.hour < DIGEST_HOUR:
+        return False
+    return state.get("last_digest") != now.strftime("%Y-%m-%d")
+
+
+def format_digest(state, rooms, error, now):
+    """「異常がないこと」を伝えるための定期レポート。"""
+    since = state.get("last_digest_at") or "監視開始"
+    new_rooms = state.get("since_digest", [])
+
+    lines = [
+        f"📋 {DANCHI_NAME} デイリーレポート",
+        f"{since} 〜 {now.strftime('%m/%d %H:%M')}",
+        "",
+    ]
+
+    if error:
+        lines += [
+            "⚠️ 現在 UR のデータを取得できていません",
+            f"　{error}",
+            "",
+            f"この間の新着 {len(new_rooms)}件",
+        ]
+    else:
+        lines += [
+            f"この間の新着 {len(new_rooms)}件",
+            f"現在の空室 {len(rooms)}件",
+        ]
+        if not new_rooms:
+            lines += ["", "監視は正常に動いています。"]
+
+    if new_rooms:
+        lines += [""] + ["\n\n".join(format_room(r) for r in new_rooms)]
+
+    lines += ["", DANCHI_URL]
+    return "\n".join(lines)
 
 
 def load_state():
@@ -318,49 +377,70 @@ def line_push(message):
 
 # ---- main ---------------------------------------------------------------
 def main():
-    try:
-        raw = fetch_rooms()
-    except Exception as e:  # noqa: BLE001
-        state = load_state()
-        if not state.get("error_notified"):
-            line_push(f"⚠️ UR空室チェックが失敗しました\n{DANCHI_NAME}\n\n{e}")
-            state["error_notified"] = True
-            save_state(state)
-        print(e, file=sys.stderr)
-        sys.exit(1)
-
-    rooms = [normalize(r) for r in raw]
-    rooms = [r for r in rooms if passes_filter(r)]
-    current_ids = {r["id"] for r in rooms}
-
     state = load_state()
-    state.pop("error_notified", None)
-    known = set(state.get("ids", []))
-    first_run = "ids" not in state
+    now = jst_now()
 
-    if first_run:
-        msg = f"🏠 {DANCHI_NAME} の空室監視を開始しました\n10分ごとにチェックします。\n\n"
-        msg += (
-            f"現在の空室 {len(rooms)}件\n\n" + "\n\n".join(format_room(r) for r in rooms)
-            if rooms
-            else "現在の空室 0件"
-        )
-        line_push(msg)
-    else:
-        new_rooms = [r for r in rooms if r["id"] not in known]
-        if new_rooms:
-            msg = f"🔔 {DANCHI_NAME} に空きが出ました（{len(new_rooms)}件）\n\n"
-            msg += "\n\n".join(format_room(r) for r in new_rooms)
-            msg += f"\n\n一覧: {DANCHI_URL}"
+    error = None
+    rooms = []
+    try:
+        rooms = [normalize(r) for r in fetch_rooms()]
+        rooms = [r for r in rooms if passes_filter(r)]
+    except Exception as e:  # noqa: BLE001
+        error = e
+        print(e, file=sys.stderr)
+
+    if error is None:
+        state.pop("error_notified", None)
+        known = set(state.get("ids", []))
+        first_run = "ids" not in state
+
+        if first_run:
+            msg = (f"🏠 {DANCHI_NAME} の空室監視を開始しました\n"
+                   f"10分ごとにチェックし、毎日{DIGEST_HOUR}時に"
+                   f"レポートを送ります。\n\n")
+            msg += (
+                f"現在の空室 {len(rooms)}件\n\n"
+                + "\n\n".join(format_room(r) for r in rooms)
+                if rooms
+                else "現在の空室 0件"
+            )
             line_push(msg)
-            print(f"新着 {len(new_rooms)}件を通知")
         else:
-            print(f"新着なし（現在の空室 {len(rooms)}件）")
+            new_rooms = [r for r in rooms if r["id"] not in known]
+            if new_rooms:
+                msg = f"🔔 {DANCHI_NAME} に空きが出ました（{len(new_rooms)}件）\n\n"
+                msg += "\n\n".join(format_room(r) for r in new_rooms)
+                msg += f"\n\n一覧: {DANCHI_URL}"
+                line_push(msg)
+                print(f"新着 {len(new_rooms)}件を通知")
+                # デイリーレポートに載せるため溜めておく（上限50件）
+                state["since_digest"] = (
+                    state.get("since_digest", []) + new_rooms
+                )[-50:]
+            else:
+                print(f"新着なし（現在の空室 {len(rooms)}件）")
 
-    state["ids"] = sorted(current_ids)
-    state["count"] = len(rooms)
-    state["checked"] = jst_today()
+        state["ids"] = sorted(r["id"] for r in rooms)
+        state["count"] = len(rooms)
+        state["checked"] = jst_today()
+    elif not state.get("error_notified"):
+        line_push(f"⚠️ UR空室チェックが失敗しました\n{DANCHI_NAME}\n\n{error}")
+        state["error_notified"] = True
+
+    # デイリーレポートは取得に失敗していても送る。
+    # 「しばらく通知が無い」状態を作らないことが目的なので、
+    # むしろ失敗しているときこそ知らせる必要がある。
+    if digest_due(state, now):
+        if line_push(format_digest(state, rooms, error, now)):
+            state["last_digest"] = now.strftime("%Y-%m-%d")
+            state["last_digest_at"] = now.strftime("%m/%d %H:%M")
+            state["since_digest"] = []
+        else:
+            print("デイリーレポートの送信に失敗。次の実行で再送します。")
+
     save_state(state)
+    if error:
+        sys.exit(1)
 
 
 if __name__ == "__main__":
