@@ -26,8 +26,8 @@ jobs:
 
       - name: Check vacancies
         env:
+          # broadcast なので宛先指定は不要。友だち追加した全員に届く。
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_TO: ${{ secrets.LINE_TO }}
           # 絞り込みたい場合だけコメントを外す
           # UR_MAX_RENT: "150000"
           # UR_MADORI: "2DK,2LDK,3LDK"

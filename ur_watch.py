@@ -261,22 +261,33 @@ def save_state(state):
 
 
 # ---- LINE 送信 ----------------------------------------------------------
-def line_push(message):
-    """送信に失敗しても例外を投げない（ログに出すだけ）。"""
-    token = (os.environ.get("LINE_CHANNEL_ACCESS_TOKEN") or "").strip()
-    to = (os.environ.get("LINE_TO") or "").strip()
+LINE_BROADCAST = "https://api.line.me/v2/bot/message/broadcast"
 
-    if not token or not to:
-        print("LINE の認証情報が未設定のため送信をスキップ:\n" + message)
+
+def line_push(message):
+    """公式アカウントを友だち追加している全員に送る。
+
+    broadcast を使うので宛先の userId は不要。受け取りたい人は
+    公式アカウントを友だち追加するだけでよい。
+    通数は宛先1人につき1通としてカウントされる（2人なら2通）。
+
+    送信に失敗しても例外は投げない（ログに出すだけ）。空室の取得自体は
+    成功しているので、通知の失敗で run 全体を落とす必要はない。
+    """
+    token = (os.environ.get("LINE_CHANNEL_ACCESS_TOKEN") or "").strip()
+
+    if not token:
+        print("LINE の認証情報が未設定のため送信をスキップ:")
+        print(message)
         return False
 
-    print(f"LINE: token {len(token)}文字 / 宛先 {to[:5]}… に送信します")
+    print(f"LINE: token {len(token)}文字 / 友だち全員に broadcast します")
 
     body = json.dumps(
-        {"to": to, "messages": [{"type": "text", "text": message[:4900]}]}
+        {"messages": [{"type": "text", "text": message[:4900]}]}
     ).encode("utf-8")
     req = urllib.request.Request(
-        "https://api.line.me/v2/bot/message/push",
+        LINE_BROADCAST,
         data=body,
         headers={
             "Content-Type": "application/json",
@@ -293,10 +304,12 @@ def line_push(message):
         if e.code == 401:
             print("→ チャネルアクセストークン（長期）が違います。"
                   "チャネルシークレットと取り違えていないか確認してください。")
-        elif e.code == 400 and "Invalid to" in detail:
-            print("→ LINE_TO のユーザーIDが不正です。U で始まる33文字か確認してください。")
         elif e.code == 403:
-            print("→ この公式アカウントを自分のLINEで友だち追加していない可能性があります。")
+            print("→ このチャネルで broadcast が使えない設定になっています。"
+                  "Messaging API チャネルか確認してください。")
+        elif e.code == 429:
+            print("→ 送信上限に達しました。無料プランの月間通数を "
+                  "LINE Official Account Manager で確認してください。")
         return False
     except Exception as e:  # noqa: BLE001
         print(f"LINE 送信 失敗: {type(e).__name__}: {e}")
