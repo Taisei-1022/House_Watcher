@@ -3,7 +3,7 @@
 UR ヌーヴェル赤羽台 (20_6940) の空室を監視して、
 新しく出た部屋だけ LINE (Messaging API) に push する。
 
-標準ライブラリのみ。GitHub Actions から1時間ごとに実行する想定。
+標準ライブラリのみ。GitHub Actions から10分ごとに実行する想定。
 
 API 仕様（www.ur-net.go.jp の common/js/api_bukken_detail.js を実測して確定）:
   POST https://chintai.r6.ur-net.go.jp/chintai/api/bukken/detail/detail_bukken_room/
@@ -16,10 +16,12 @@ API 仕様（www.ur-net.go.jp の common/js/api_bukken_detail.js を実測して
     pageIndex を進める。
 """
 
+import datetime
 import html
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -59,6 +61,8 @@ UA = (
 )
 
 MAX_PAGES = 20  # 暴走よけ
+RETRIES = 3
+RETRY_WAIT = (3, 8)  # 秒。RETRIES - 1 個必要
 
 
 def build_params(page_index):
@@ -80,6 +84,12 @@ def build_params(page_index):
 
 
 def post(params):
+    """一過性の 5xx・通信エラーはリトライする。
+
+    10分間隔だと月4,000回以上叩くことになり、UR 側が稀に返す 500 を
+    そのまま失敗にすると ⚠️ が誤発報して run も赤くなる。
+    4xx はこちらの組み立てミスなので即座に諦める。
+    """
     req = urllib.request.Request(
         ENDPOINT,
         data=urllib.parse.urlencode(params).encode("utf-8"),
@@ -92,8 +102,28 @@ def post(params):
             "Origin": SITE,
         },
     )
-    with urllib.request.urlopen(req, timeout=30) as res:
-        return res.read().decode("utf-8", errors="replace")
+
+    last_error = None
+    for attempt in range(RETRIES):
+        try:
+            with urllib.request.urlopen(req, timeout=30) as res:
+                return res.read().decode("utf-8", errors="replace")
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                raise
+            last_error = e
+        except (urllib.error.URLError, TimeoutError, ConnectionError) as e:
+            last_error = e
+
+        if attempt < RETRIES - 1:
+            wait = RETRY_WAIT[attempt]
+            print(
+                f"UR API 一時エラー ({last_error}) — {wait}秒後に再試行 "
+                f"({attempt + 2}/{RETRIES})"
+            )
+            time.sleep(wait)
+
+    raise last_error
 
 
 def fetch_page(page_index):
@@ -206,6 +236,17 @@ def format_room(r):
 
 
 # ---- 状態の保存 ---------------------------------------------------------
+def jst_today():
+    """JST の日付 (YYYY-MM-DD)。
+
+    state.json にこれを入れておくと、空室 0 件が続いても日付が変わった日だけ
+    ファイルの中身が変わる = Actions が 1日1回だけ commit する。
+    「いつまで動いていたか」の記録になり、リポジトリが無活動になるのも防ぐ。
+    """
+    jst = datetime.timezone(datetime.timedelta(hours=9))
+    return datetime.datetime.now(jst).strftime("%Y-%m-%d")
+
+
 def load_state():
     try:
         with open(STATE_PATH, encoding="utf-8") as f:
@@ -285,7 +326,7 @@ def main():
     first_run = "ids" not in state
 
     if first_run:
-        msg = f"🏠 {DANCHI_NAME} の空室監視を開始しました\n毎時10分にチェックします。\n\n"
+        msg = f"🏠 {DANCHI_NAME} の空室監視を開始しました\n10分ごとにチェックします。\n\n"
         msg += (
             f"現在の空室 {len(rooms)}件\n\n" + "\n\n".join(format_room(r) for r in rooms)
             if rooms
@@ -305,6 +346,7 @@ def main():
 
     state["ids"] = sorted(current_ids)
     state["count"] = len(rooms)
+    state["checked"] = jst_today()
     save_state(state)
 
 

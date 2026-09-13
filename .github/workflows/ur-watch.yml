@@ -2,8 +2,9 @@ name: UR akabanedai watch
 
 on:
   schedule:
-    # 毎時10分（UTC基準だが毎時なので日本時間でも毎時10分）
-    - cron: "10 * * * *"
+    # 10分ごと。GitHub の scheduler は混雑時に遅延するので、
+    # 実際の間隔は 10〜20分程度ぶれる。
+    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions:
