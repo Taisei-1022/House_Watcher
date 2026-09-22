@@ -273,6 +273,17 @@ def digest_due(state, now):
     return state.get("last_digest") != now.strftime("%Y-%m-%d")
 
 
+def actions_history_url():
+    """この workflow の実行履歴ページ。Actions 上でしか組み立てられない。"""
+    server = env("GITHUB_SERVER_URL", "https://github.com")
+    repo = env("GITHUB_REPOSITORY")
+    if not repo:
+        return None
+    ref = env("GITHUB_WORKFLOW_REF")  # owner/repo/.github/workflows/x.yml@refs/heads/main
+    workflow = ref.split("@")[0].rsplit("/", 1)[-1] if ref else "ur-watch.yml"
+    return f"{server}/{repo}/actions/workflows/{workflow}"
+
+
 def format_digest(state, rooms, error, now):
     """「異常がないこと」を伝えるための定期レポート。"""
     since = state.get("last_digest_at") or "監視開始"
@@ -303,6 +314,9 @@ def format_digest(state, rooms, error, now):
         lines += [""] + ["\n\n".join(format_room(r) for r in new_rooms)]
 
     lines += ["", DANCHI_URL]
+    history = actions_history_url()
+    if history:
+        lines.append(f"チェック履歴: {history}")
     return "\n".join(lines)
 
 
