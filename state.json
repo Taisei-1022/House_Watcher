@@ -1,10 +1,25 @@
 {
-  "ids": [],
-  "count": 0,
+  "ids": [
+    "000160207"
+  ],
+  "count": 1,
   "checked": "2026-10-04",
   "last_digest": "2026-10-03",
   "last_digest_at": "10/03 19:00",
   "since_digest": [
+    {
+      "id": "000160207",
+      "name": "16号棟207号室",
+      "rent": "155,300円",
+      "common": "4,200円",
+      "madori": "1LDK",
+      "space": "48㎡",
+      "floor": "2階",
+      "system": [
+        "URライト（4年定借）"
+      ],
+      "link": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940_room.html?JKSS=000160207"
+    },
     {
       "id": "000160207",
       "name": "16号棟207号室",
