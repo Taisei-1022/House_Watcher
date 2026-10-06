@@ -33,12 +33,19 @@ jobs:
           # UR_MADORI: "2DK,2LDK,3LDK"
         run: python ur_watch.py
 
+      - name: Check webket parking
+        # UR 側が失敗しても駐車場は見る
+        if: always()
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+        run: python webket_watch.py
+
       - name: Save state
         if: always()
         run: |
           git config user.name  "ur-watch-bot"
           git config user.email "actions@github.com"
-          git add state.json || true
+          git add state.json webket_state.json || true
           git diff --cached --quiet || git commit -m "chore: update state"
           git pull --rebase --autostash || true
           git push || true
