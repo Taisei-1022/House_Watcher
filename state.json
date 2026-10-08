@@ -4,22 +4,7 @@
   ],
   "count": 1,
   "checked": "2026-10-08",
-  "last_digest": "2026-10-07",
-  "last_digest_at": "10/07 19:01",
-  "since_digest": [
-    {
-      "id": "000161201",
-      "name": "16号棟1201号室",
-      "rent": "286,100円",
-      "common": "4,200円",
-      "madori": "3LDK",
-      "space": "78㎡",
-      "floor": "12階",
-      "system": [
-        "近居割",
-        "近居割WIDE"
-      ],
-      "link": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940_room.html?JKSS=000161201"
-    }
-  ]
+  "last_digest": "2026-10-08",
+  "last_digest_at": "10/08 19:00",
+  "since_digest": []
 }
