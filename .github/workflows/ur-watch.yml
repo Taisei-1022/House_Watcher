@@ -1,4 +1,7 @@
-name: UR akabanedai watch
+name: watch
+
+# ファイル名は変えない。外部 cron (cron-job.org) が
+# workflow_dispatch をこのファイル名で叩いているため。
 
 on:
   schedule:
@@ -33,12 +36,24 @@ jobs:
           # UR_MADORI: "2DK,2LDK,3LDK"
         run: python ur_watch.py
 
+      - name: Check generic watches
+        # watches.json に書いた汎用監視。UR 側が失敗しても実行する。
+        if: always()
+        env:
+          LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
+          RAKUTEN_APP_ID: ${{ secrets.RAKUTEN_APP_ID }}
+        run: python run.py
+
       - name: Save state
         if: always()
         run: |
           git config user.name  "ur-watch-bot"
           git config user.email "actions@github.com"
+          # 1ファイルずつ add する。存在しないパスを混ぜると git add が
+          # pathspec エラーで全体失敗し、|| true に握り潰されて state が
+          # 一切保存されなくなる（通知履歴が毎回リセットされる壊れ方）。
           git add state.json || true
+          git add watch_state.json || true
           git diff --cached --quiet || git commit -m "chore: update state"
           git pull --rebase --autostash || true
           git push || true

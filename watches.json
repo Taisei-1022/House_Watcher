@@ -1,0 +1,111 @@
+{
+  "digest_hour": 19,
+
+  "_about": [
+    "汎用監視の定義。source.type で取得方法を選ぶ。",
+    "  json_api    裏の JSON API を直叩き（最優先。壊れにくく負荷も軽い）",
+    "  html_regex  HTML を名前付きキャプチャで切る（API が無いとき）",
+    "  rakuten_travel  楽天トラベル空室検索API（公式・無料・要 RAKUTEN_APP_ID）",
+    "condition.type は appeared / threshold / contains / not_contains / changed / gone / all / any / not。",
+    "新しいサイトは `python run.py --only <id> --dry-run --force` で抽出が通るまで回す。"
+  ],
+
+  "watches": [
+    {
+      "id": "ur-akabanedai-generic",
+      "name": "ヌーヴェル赤羽台（汎用エンジン版）",
+      "enabled": false,
+      "_why_disabled": "ur_watch.py が本番稼働中。二重通知になるので検証専用。",
+      "interval": "10m",
+      "url": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940.html",
+      "source": {
+        "type": "json_api",
+        "url": "https://chintai.r6.ur-net.go.jp/chintai/api/bukken/detail/detail_bukken_room/",
+        "check_robots": false,
+        "null_is_empty": true,
+        "link_prefix": "https://www.ur-net.go.jp",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "Accept": "application/json, text/javascript, */*; q=0.01",
+          "X-Requested-With": "XMLHttpRequest",
+          "Referer": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940.html",
+          "Origin": "https://www.ur-net.go.jp"
+        },
+        "data": {
+          "rent_low": "", "rent_high": "",
+          "floorspace_low": "", "floorspace_high": "",
+          "shisya": "20", "danchi": "694", "shikibetu": "0",
+          "newBukkenRoom": "", "orderByField": "0", "orderBySort": "0",
+          "pageIndex": "0", "sp": ""
+        },
+        "paginate": { "param": "pageIndex", "total_path": "[0].allCount" },
+        "items": "[*]",
+        "fields": {
+          "id": "id",
+          "label": "name",
+          "rent": "rent",
+          "madori": "type",
+          "space": "floorspace",
+          "floor": "floor",
+          "link": "roomDetailLink"
+        }
+      },
+      "condition": { "type": "appeared" },
+      "notify": { "cooldown": "0" }
+    },
+
+    {
+      "id": "hotel-sample",
+      "name": "（例）宿の値下がり監視",
+      "enabled": false,
+      "_setup": [
+        "1. https://webservice.rakuten.co.jp/ で無料のアプリ ID を取得",
+        "2. GitHub の Secrets に RAKUTEN_APP_ID として登録",
+        "3. hotel_no は楽天トラベルの宿ページ URL の数字（HOTEL/<ここ>/）",
+        "4. checkin/checkout と value を直して enabled: true"
+      ],
+      "interval": "1h",
+      "source": {
+        "type": "rakuten_travel",
+        "hotel_no": "000000",
+        "checkin": "2026-11-21",
+        "checkout": "2026-11-22",
+        "adults": 2,
+        "search_pattern": 1
+      },
+      "condition": {
+        "type": "threshold", "field": "price", "op": "<=", "value": 20000
+      },
+      "notify": { "cooldown": "12h" }
+    },
+
+    {
+      "id": "ec-stock-sample",
+      "name": "（例）EC の再入荷監視",
+      "enabled": false,
+      "_setup": [
+        "url / pattern / sanity を実物に合わせる。",
+        "sanity は『そのページなら必ず出る文字列』。商品名などを入れる。",
+        "これを省略すると、ページ改修で抽出0件になったのを『在庫なし』と",
+        "誤認して黙り込む。html_regex では必須にしてある。"
+      ],
+      "interval": "10m",
+      "url": "https://example.test/item/123",
+      "source": {
+        "type": "html_regex",
+        "url": "https://example.test/item/123",
+        "sanity": "商品名をここに入れる",
+        "flags": "s",
+        "pattern": "data-sku=\"(?P<id>[^\"]+)\".*?<span class=\"stock\">(?P<status>[^<]*)</span>.*?<span class=\"price\">(?P<price>[^<]*)</span>"
+      },
+      "condition": {
+        "type": "all",
+        "conditions": [
+          { "type": "not_contains", "field": "status", "value": "在庫なし" },
+          { "type": "threshold", "field": "price", "op": "<=", "value": 5000 }
+        ]
+      },
+      "notify": { "cooldown": "6h", "once": false }
+    }
+  ]
+}

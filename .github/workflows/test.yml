@@ -1,0 +1,21 @@
+name: test
+
+# 監視本体は10分ごとに動くので、watches.json の書き間違いや
+# エンジンの退行はコミット時点で止める。cron の run で気づくのは遅い。
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
+      - name: Validate watch definitions
+        run: python run.py --list
