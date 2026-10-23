@@ -1,8 +1,25 @@
 {
-  "ids": [],
-  "count": 0,
+  "ids": [
+    "000100413"
+  ],
+  "count": 1,
   "checked": "2026-10-23",
   "last_digest": "2026-10-22",
   "last_digest_at": "10/22 19:00",
-  "since_digest": []
+  "since_digest": [
+    {
+      "id": "000100413",
+      "name": "10号棟413号室",
+      "rent": "141,800円",
+      "common": "4,200円",
+      "madori": "1DK",
+      "space": "46㎡",
+      "floor": "4階",
+      "system": [
+        "近居割",
+        "近居割WIDE"
+      ],
+      "link": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940_room.html?JKSS=000100413"
+    }
+  ]
 }
