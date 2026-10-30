@@ -2,22 +2,7 @@
   "ids": [],
   "count": 0,
   "checked": "2026-10-30",
-  "last_digest": "2026-10-29",
-  "last_digest_at": "10/29 19:00",
-  "since_digest": [
-    {
-      "id": "000040221",
-      "name": "4号棟221号室",
-      "rent": "129,000円",
-      "common": "4,200円",
-      "madori": "1DK",
-      "space": "45㎡",
-      "floor": "2階",
-      "system": [
-        "近居割",
-        "近居割WIDE"
-      ],
-      "link": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940_room.html?JKSS=000040221"
-    }
-  ]
+  "last_digest": "2026-10-30",
+  "last_digest_at": "10/30 19:00",
+  "since_digest": []
 }
