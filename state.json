@@ -1,8 +1,25 @@
 {
-  "ids": [],
-  "count": 0,
+  "ids": [
+    "000080706"
+  ],
+  "count": 1,
   "checked": "2026-11-12",
   "last_digest": "2026-11-11",
   "last_digest_at": "11/11 19:00",
-  "since_digest": []
+  "since_digest": [
+    {
+      "id": "000080706",
+      "name": "8号棟706号室",
+      "rent": "136,700円",
+      "common": "4,200円",
+      "madori": "1DK",
+      "space": "43㎡",
+      "floor": "7階",
+      "system": [
+        "近居割",
+        "近居割WIDE"
+      ],
+      "link": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940_room.html?JKSS=000080706"
+    }
+  ]
 }
