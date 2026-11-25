@@ -1,8 +1,25 @@
 {
-  "ids": [],
-  "count": 0,
+  "ids": [
+    "000030813"
+  ],
+  "count": 1,
   "checked": "2026-11-25",
   "last_digest": "2026-11-24",
   "last_digest_at": "11/24 19:00",
-  "since_digest": []
+  "since_digest": [
+    {
+      "id": "000030813",
+      "name": "3号棟813号室",
+      "rent": "157,800円",
+      "common": "4,200円",
+      "madori": "1LDK",
+      "space": "51㎡",
+      "floor": "8階",
+      "system": [
+        "近居割",
+        "近居割WIDE"
+      ],
+      "link": "https://www.ur-net.go.jp/chintai/kanto/tokyo/20_6940_room.html?JKSS=000030813"
+    }
+  ]
 }
